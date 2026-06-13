@@ -1,0 +1,6 @@
+{
+  "name": "CarbonCompass AI",
+  "description": "Your AI Guide to Understanding, Tracking, and Reducing Your Carbon Footprint. Calculate, track, simulate, and reduce your carbon footprint with AI insights and your personal carbon compass.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
