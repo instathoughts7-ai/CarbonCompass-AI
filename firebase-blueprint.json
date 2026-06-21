@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "User": {
+      "title": "User PROFILE",
+      "description": "Stores user email, display name, and temporal markers for a logged-in account, hosting their carbon metrics and progress metadata",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "Primary authenticated email of the account"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the user"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Record creation server timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Record update server timestamp"
+        }
+      },
+      "required": [
+        "email",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "HistoricalSnapshot": {
+      "title": "Historical Snapshot",
+      "description": "A single saved checkpoint tracking an individual assessment inputs and generated digital twin output for historic line chart plotting",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the snapshot"
+        },
+        "date": {
+          "type": "string",
+          "description": "Human-friendly calendar checkpoint date"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of checkpoint creation"
+        }
+      },
+      "required": [
+        "id",
+        "date",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Root user profile document"
+    },
+    "/users/{userId}/snapshots/{snapshotId}": {
+      "schema": "HistoricalSnapshot",
+      "description": "Collection containing all snapshots created by this user"
+    }
+  }
+}

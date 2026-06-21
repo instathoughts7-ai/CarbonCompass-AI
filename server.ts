@@ -10,6 +10,8 @@ import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import helmet from 'helmet';
+import { validateAssessment } from './src/lib/apiValidation';
+import { AIInsights } from './src/types/carbon';
 
 // Load environment variables
 dotenv.config();
@@ -129,7 +131,7 @@ function getGeminiClient(): GoogleGenAI {
 
 // Simple caching map for repeated Gemini requests to save API key credits and lower delays
 interface CachedResponse {
-  data: any;
+  data: AIInsights;
   timestamp: number;
 }
 const geminiCache = new Map<string, CachedResponse>();
@@ -150,9 +152,10 @@ app.post('/api/insights', apiRateLimiter, async (req: Request, res: Response): P
   try {
     const { assessment } = req.body;
 
-    // Security: Input validation & sanitization
-    if (!assessment) {
-      res.status(400).json({ error: 'Missing carbon assessment payload' });
+    // Security: Input validation & sanitization via centralized lib validator
+    const validation = validateAssessment(assessment);
+    if (!validation.valid) {
+      res.status(400).json({ error: validation.error });
       return;
     }
 
@@ -171,58 +174,6 @@ app.post('/api/insights', apiRateLimiter, async (req: Request, res: Response): P
       wasteBagCountPerWeek,
       recyclingPercentage,
     } = assessment;
-
-    // Strict type checks for all properties to eliminate dynamic type-coercion bugs
-    if (
-      typeof carMilesPerWeek !== 'number' || !Number.isFinite(carMilesPerWeek) ||
-      typeof publicTransitMilesPerWeek !== 'number' || !Number.isFinite(publicTransitMilesPerWeek) ||
-      typeof shortFlightsPerYear !== 'number' || !Number.isFinite(shortFlightsPerYear) ||
-      typeof mediumFlightsPerYear !== 'number' || !Number.isFinite(mediumFlightsPerYear) ||
-      typeof longFlightsPerYear !== 'number' || !Number.isFinite(longFlightsPerYear) ||
-      typeof electricityKwhPerMonth !== 'number' || !Number.isFinite(electricityKwhPerMonth) ||
-      typeof cleanEnergyPercentage !== 'number' || !Number.isFinite(cleanEnergyPercentage) ||
-      typeof shoppingSpendPerMonth !== 'number' || !Number.isFinite(shoppingSpendPerMonth) ||
-      typeof wasteBagCountPerWeek !== 'number' || !Number.isFinite(wasteBagCountPerWeek) ||
-      typeof recyclingPercentage !== 'number' || !Number.isFinite(recyclingPercentage)
-    ) {
-      res.status(400).json({ error: 'Malformed or non-numeric inputs detected inside footprint assessment' });
-      return;
-    }
-
-    // Security & Logic: Assert bounds and limits to prevent buffer/range calculation exploits
-    if (
-      carMilesPerWeek < 0 || carMilesPerWeek > 5000 ||
-      publicTransitMilesPerWeek < 0 || publicTransitMilesPerWeek > 5000 ||
-      shortFlightsPerYear < 0 || shortFlightsPerYear > 200 ||
-      mediumFlightsPerYear < 0 || mediumFlightsPerYear > 200 ||
-      longFlightsPerYear < 0 || longFlightsPerYear > 200 ||
-      electricityKwhPerMonth < 0 || electricityKwhPerMonth > 20000 ||
-      cleanEnergyPercentage < 0 || cleanEnergyPercentage > 100 ||
-      shoppingSpendPerMonth < 0 || shoppingSpendPerMonth > 100000 ||
-      wasteBagCountPerWeek < 0 || wasteBagCountPerWeek > 100 ||
-      recyclingPercentage < 0 || recyclingPercentage > 100
-    ) {
-      res.status(400).json({ error: 'Footprint assessment inputs exceed realistic bounds or ranges' });
-      return;
-    }
-
-    // Security & Logic: Categorical/enum checks
-    const VALID_VEHICLES = ['electric', 'hybrid', 'gas_car', 'suv', 'none'];
-    const VALID_DIETS = ['vegan', 'vegetarian', 'pescatarian', 'medium_meat', 'heavy_meat'];
-    const VALID_SHOPPING = ['minimalist', 'average', 'frequent'];
-
-    if (!VALID_VEHICLES.includes(vehicleType)) {
-      res.status(400).json({ error: 'Invalid vehicle type configuration input.' });
-      return;
-    }
-    if (!VALID_DIETS.includes(dietType)) {
-      res.status(400).json({ error: 'Invalid user diet lifestyle input.' });
-      return;
-    }
-    if (!VALID_SHOPPING.includes(shoppingHabits)) {
-      res.status(400).json({ error: 'Invalid user shopping customer style input.' });
-      return;
-    }
 
     // Cache-check sequence: Stringify ordered keys to form deterministic cache key
     const cacheKey = JSON.stringify({

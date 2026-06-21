@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. GLOBAL SAFETY NET
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reuseable global safety primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Nested schema validation helpers
+    function isValidAssessment(data) {
+      return (data.carMilesPerWeek is int || data.carMilesPerWeek is float)
+          && data.vehicleType in ['electric', 'hybrid', 'gas_car', 'suv', 'none']
+          && (data.publicTransitMilesPerWeek is int || data.publicTransitMilesPerWeek is float)
+          && (data.shortFlightsPerYear is int || data.shortFlightsPerYear is float)
+          && (data.mediumFlightsPerYear is int || data.mediumFlightsPerYear is float)
+          && (data.longFlightsPerYear is int || data.longFlightsPerYear is float)
+          && (data.electricityKwhPerMonth is int || data.electricityKwhPerMonth is float)
+          && (data.cleanEnergyPercentage is int || data.cleanEnergyPercentage is float)
+          && data.dietType in ['vegan', 'vegetarian', 'pescatarian', 'medium_meat', 'heavy_meat']
+          && (data.shoppingSpendPerMonth is int || data.shoppingSpendPerMonth is float)
+          && data.shoppingHabits in ['minimalist', 'average', 'frequent']
+          && (data.wasteBagCountPerWeek is int || data.wasteBagCountPerWeek is float)
+          && (data.recyclingPercentage is int || data.recyclingPercentage is float);
+    }
+
+    function isValidTwin(data) {
+      return data.id is string && data.id.size() <= 128
+          && data.name is string && data.name.size() <= 256
+          && (data.score is int || data.score is float)
+          && data.riskLevel in ['Low', 'Medium', 'High']
+          && (data.totalEmissions is int || data.totalEmissions is float)
+          && data.breakdown is map
+          && (data.breakdown.transportation is int || data.breakdown.transportation is float)
+          && (data.breakdown.flights is int || data.breakdown.flights is float)
+          && (data.breakdown.electricity is int || data.breakdown.electricity is float)
+          && (data.breakdown.diet is int || data.breakdown.diet is float)
+          && (data.breakdown.shopping is int || data.breakdown.shopping is float)
+          && (data.breakdown.waste is int || data.breakdown.waste is float);
+    }
+
+    function isValidStreak(data) {
+      return (data.currentStreak is int || data.currentStreak is float)
+          && (data.highestStreak is int || data.highestStreak is float)
+          && (data.lastActionDate == null || (data.lastActionDate is string && data.lastActionDate.size() <= 128));
+    }
+
+    function isValidInsights(data) {
+      return data.hiddenDrivers is list && data.hiddenDrivers.size() <= 20
+          && data.opportunities is list && data.opportunities.size() <= 20
+          && data.recommendations is list && data.recommendations.size() <= 20
+          && data.timestamp is string && data.timestamp.size() <= 128;
+    }
+
+    function isValidUser(data) {
+      return data.email is string && data.email.size() > 0 && data.email.size() <= 256
+          && (data.name == null || (data.name is string && data.name.size() <= 128))
+          && (data.assessment == null || isValidAssessment(data.assessment))
+          && (data.twin == null || isValidTwin(data.twin))
+          && (data.streak == null || isValidStreak(data.streak))
+          && (data.insights == null || isValidInsights(data.insights))
+          && data.createdAt == request.time
+          && data.updatedAt == request.time;
+    }
+
+    function isValidSnapshot(data) {
+      return data.id is string && data.id.size() <= 128
+          && data.date is string && data.date.size() <= 128
+          && data.assessment is map && isValidAssessment(data.assessment)
+          && data.twin is map && isValidTwin(data.twin)
+          && data.createdAt == request.time;
+    }
+
+    // 2. FIRESTORE DATABASE COLLECTIONS
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
+
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && (
+        incoming().createdAt == existing().createdAt && (
+          // Action 1: Update form Assessment metrics + twin output
+          (incoming().diff(existing()).affectedKeys().hasOnly(['assessment', 'twin', 'updatedAt'])) ||
+          // Action 2: Record streak update
+          (incoming().diff(existing()).affectedKeys().hasOnly(['streak', 'updatedAt'])) ||
+          // Action 3: Save generated AI insights
+          (incoming().diff(existing()).affectedKeys().hasOnly(['insights', 'updatedAt'])) ||
+          // Action 4: Sync whole account (setup / migration)
+          (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'updatedAt'])) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['assessment', 'twin', 'streak', 'insights', 'updatedAt']))
+        )
+      );
+
+      allow delete: if false;
+
+      // Unbounded snapshot lists nested in subcollections
+      match /snapshots/{snapshotId} {
+        allow get, list, delete: if isOwner(userId) && isValidId(userId) && isValidId(snapshotId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(snapshotId) && isValidSnapshot(incoming());
+        allow update: if false; // Snapshots are immutable history logs
+      }
+    }
+  }
+}
